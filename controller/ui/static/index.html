@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Holiday Bright Lights — Brilliant Wreath Console</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="wreath-dot"></div>
+      <div>
+        <h1>Brilliant Wreath Lighting Console</h1>
+        <p class="subtitle">Bouffalo BL602 (0x6B) · AK001-ZJ21413 · 50 Addressable HSV Pixels</p>
+      </div>
+    </div>
+    <div class="topbar-controls">
+      <div class="pill" id="conn-pill">Disconnected</div>
+      <div class="pill muted" id="metrics-pill">RTT — · FPS —</div>
+      <select id="controller-select" title="Active Controller"></select>
+      <button class="btn primary" id="btn-power-on">Power On</button>
+      <button class="btn" id="btn-power-off">Power Off</button>
+      <button class="btn warn" id="btn-stop-effect">Stop Effect</button>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="lighting">Lighting &amp; Device</button>
+    <button class="tab" data-tab="pixels">Pixel Editor (50 LEDs)</button>
+    <button class="tab" data-tab="timeline">Animation Editor</button>
+    <button class="tab dev-tab" data-tab="developer">Developer Console</button>
+  </nav>
+
+  <main class="container">
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- TAB 1: LIGHTING & DEVICE -->
+    <section id="tab-lighting" class="tab-panel active">
+      <div class="grid-2">
+        <!-- Device Panel -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Device &amp; Discovery</h2>
+            <div class="btn-group">
+              <button class="btn small" id="btn-scan-wifi">Scan Wi-Fi (UDP 48899)</button>
+              <button class="btn small" id="btn-scan-ble">Scan BLE</button>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <input type="text" id="input-host" placeholder="Wi-Fi IP (e.g. 10.0.0.207)" value="10.0.0.207" />
+            <button class="btn primary" id="btn-connect-wifi">Connect Wi-Fi</button>
+            <button class="btn" id="btn-connect-ble">Connect BLE</button>
+            <button class="btn" id="btn-connect-sim">Simulator</button>
+            <button class="btn" id="btn-disconnect">Disconnect</button>
+          </div>
+
+          <div id="discovery-list" class="discovery-list"></div>
+
+          <div class="info-grid" id="device-info-grid">
+            <div class="info-box"><span class="label">Model</span><span id="info-model">—</span></div>
+            <div class="info-box"><span class="label">SoC / Firmware</span><span id="info-fw">—</span></div>
+            <div class="info-box"><span class="label">LEDs / Mode</span><span id="info-leds">—</span></div>
+            <div class="info-box"><span class="label">Link Quality</span><span id="info-quality">—</span></div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn small" id="btn-refresh-state">Poll State (EA 81)</button>
+            <button class="btn small" id="btn-query-rtc">Query RTC Time</button>
+            <button class="btn small" id="btn-query-remote">Query Remote Config</button>
+          </div>
+          <pre id="diag-output" class="mini-pre hidden"></pre>
+        </div>
+
+        <!-- Lighting Control Panel -->
+        <div class="card">
+          <div class="card-header">
+            <h2>Solid Color, White &amp; Brightness</h2>
+            <span class="badge" id="active-mode-badge">Mode: —</span>
+          </div>
+
+          <div class="color-controls">
+            <input type="color" id="color-picker" value="#ff0000" />
+            <div class="sliders">
+              <label>Master Brightness: <span id="val-brightness">100%</span>
+                <input type="range" id="slider-brightness" min="0" max="100" value="100" />
+              </label>
+              <label>White Channel (WB): <span id="val-white">0%</span>
+                <input type="range" id="slider-white" min="0" max="100" value="0" />
+              </label>
+            </div>
+          </div>
+
+          <div class="swatch-row">
+            <button class="swatch" data-rgb="255,0,0" style="background:#ff0000">Red</button>
+            <button class="swatch" data-rgb="255,110,0" style="background:#ff6e00">Orange</button>
+            <button class="swatch" data-rgb="255,220,0" style="background:#ffdc00;color:#111">Yellow</button>
+            <button class="swatch" data-rgb="0,255,0" style="background:#00ff00;color:#111">Green</button>
+            <button class="swatch" data-rgb="0,240,255" style="background:#00f0ff;color:#111">Aqua</button>
+            <button class="swatch" data-rgb="0,40,255" style="background:#0028ff">Blue</button>
+            <button class="swatch" data-rgb="180,0,255" style="background:#b400ff">Purple</button>
+            <button class="swatch" data-rgb="255,255,255" style="background:#ffffff;color:#111">White</button>
+          </div>
+
+          <hr class="sep" />
+
+          <div class="card-header">
+            <h3>Streaming Speed &amp; Rate</h3>
+            <span class="hint">Safe Wi-Fi limit: 1–18 FPS (BL602 verified)</span>
+          </div>
+          <div class="sliders two-col">
+            <label>Effect Speed: <span id="val-speed">50%</span>
+              <input type="range" id="slider-speed" min="0" max="100" value="50" />
+            </label>
+            <label>Stream Rate: <span id="val-fps">12 FPS</span>
+              <input type="range" id="slider-fps" min="1" max="18" value="12" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Effects Catalog -->
+      <div class="card">
+        <div class="card-header">
+          <h2>Host Per-Pixel Effects (50-LED Real-Time Engine)</h2>
+          <button class="btn small warn" id="btn-stop-effect-2">Stop Animation</button>
+        </div>
+        <div id="host-effects-grid" class="effects-grid"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2>Controller-Native Scenes (E1 21) &amp; Overlays (E1 26)</h2>
+            <span class="hint">Runs directly on BL602 chip</span>
+          </div>
+          <div id="native-scenes-grid" class="effects-grid compact"></div>
+          <h4 class="subhead">Frame Overlays (applied on current pixel frame)</h4>
+          <div id="native-overlays-grid" class="effects-grid compact"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Telegraphy &amp; Weather Sync</h2>
+          </div>
+          <div class="subpanel">
+            <h4>Optical Telegraphy</h4>
+            <div class="form-row">
+              <select id="tel-mode">
+                <option value="morse">Morse Code (WPM)</option>
+                <option value="binary">ASCII Binary (BPS)</option>
+              </select>
+              <input type="text" id="tel-text" value="MERRY XMAS" placeholder="Message" />
+              <input type="number" id="tel-rate" value="15" min="1" max="50" style="width:78px" />
+              <button class="btn primary small" id="btn-tel-start">Send</button>
+              <button class="btn small" id="btn-tel-stop">Stop</button>
+            </div>
+          </div>
+          <div class="subpanel">
+            <h4>Open-Meteo Weather Sync</h4>
+            <div class="form-row">
+              <input type="text" id="weather-loc" value="48910" placeholder="Zip or City" />
+              <label class="chk"><input type="checkbox" id="weather-fx" checked /> Animated Effect</label>
+              <button class="btn primary small" id="btn-weather-sync">Apply Weather</button>
+            </div>
+            <div id="weather-result" class="hint"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: PIXEL EDITOR -->
+    <section id="tab-pixels" class="tab-panel">
+      <div class="grid-pixel">
+        <div class="card">
+          <div class="card-header">
+            <h2>Wreath Ring Preview &amp; Paint Canvas (50 Pixels)</h2>
+            <div class="btn-group">
+              <label class="chk"><input type="checkbox" id="chk-3d-layout" checked /> 3D Physical Map</label>
+              <label class="chk"><input type="checkbox" id="chk-auto-push" checked /> Auto-Push</label>
+              <button class="btn primary small" id="btn-push-pixels">Push Frame (E1 23)</button>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="wreath-canvas" width="440" height="440"></canvas>
+            <div id="hover-pixel-info" class="hint">Click or drag LEDs on the ring or strip below to paint.</div>
+          </div>
+          <div id="linear-strip" class="linear-strip"></div>
+        </div>
+
+        <div class="card">
+          <h2>Paint, Segment &amp; Mapping Tools</h2>
+          <div class="tool-block">
+            <div class="form-row">
+              <label>Brush Color <input type="color" id="pixel-brush-color" value="#00ff66" /></label>
+              <select id="pixel-tool">
+                <option value="paint">Paint Brush</option>
+                <option value="eyedropper">Eyedropper</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button class="btn small" id="btn-px-fill">Fill All</button>
+              <button class="btn small" id="btn-px-clear">Clear (Off)</button>
+              <button class="btn small" id="btn-px-rot-cw">Rotate +1</button>
+              <button class="btn small" id="btn-px-rot-ccw">Rotate -1</button>
+            </div>
+          </div>
+
+          <div class="tool-block">
+            <h4>Segment &amp; Stride Selection</h4>
+            <div class="form-row">
+              <label>Start <input type="number" id="seg-start" min="0" max="49" value="0" style="width:64px" /></label>
+              <label>End <input type="number" id="seg-end" min="0" max="49" value="24" style="width:64px" /></label>
+              <label>Step <input type="number" id="seg-step" min="1" max="25" value="1" style="width:56px" /></label>
+              <button class="btn small" id="btn-seg-paint">Paint Range</button>
+            </div>
+          </div>
+
+          <div class="tool-block">
+            <h4>Multi-Stop Gradient</h4>
+            <div class="form-row">
+              <input type="color" id="grad-c1" value="#ff0000" />
+              <input type="color" id="grad-c2" value="#00ff00" />
+              <input type="color" id="grad-c3" value="#0066ff" />
+              <button class="btn small" id="btn-px-gradient">Apply Gradient</button>
+            </div>
+          </div>
+
+          <div class="tool-block">
+            <h4>Logical-to-Physical Mapping</h4>
+            <div class="form-row">
+              <label>Origin (0..49) <input type="number" id="map-origin" min="0" max="49" value="0" style="width:68px" /></label>
+              <label class="chk"><input type="checkbox" id="map-reverse" /> Counter-Clockwise</label>
+              <button class="btn small" id="btn-apply-mapping">Apply Mapping</button>
+            </div>
+          </div>
+
+          <div class="tool-block">
+            <h4>Saved Pixel Patterns</h4>
+            <div class="form-row">
+              <input type="text" id="pattern-name" placeholder="Pattern name" />
+              <button class="btn primary small" id="btn-save-pattern">Save Pattern</button>
+            </div>
+            <div id="patterns-list" class="saved-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: ANIMATION EDITOR -->
+    <section id="tab-timeline" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <h2>Keyframe Timeline Editor</h2>
+          <div class="btn-group">
+            <button class="btn small primary" id="btn-kf-capture">Add Frame from Pixel Editor</button>
+            <button class="btn small" id="btn-kf-dup">Duplicate Selected</button>
+            <button class="btn small" id="btn-kf-left">Move Left</button>
+            <button class="btn small" id="btn-kf-right">Move Right</button>
+            <button class="btn small warn" id="btn-kf-del">Delete Frame</button>
+          </div>
+        </div>
+
+        <div id="timeline-strip" class="timeline-strip"></div>
+
+        <div class="grid-2" style="margin-top:14px">
+          <div class="subpanel">
+            <h4>Selected Keyframe</h4>
+            <div class="form-row">
+              <label>Duration (ms) <input type="number" id="kf-duration" min="50" step="50" value="600" style="width:90px" /></label>
+              <label>Transition
+                <select id="kf-transition">
+                  <option value="linear">Linear Fade</option>
+                  <option value="cut">Instant Cut</option>
+                </select>
+              </label>
+              <button class="btn small" id="btn-kf-load-editor">Edit Frame in Pixel Editor</button>
+            </div>
+          </div>
+          <div class="subpanel">
+            <h4>Timeline Playback &amp; Presets</h4>
+            <div class="form-row">
+              <label class="chk"><input type="checkbox" id="tl-loop" checked /> Loop</label>
+              <label>Speed <input type="range" id="tl-speed" min="0" max="100" value="50" /></label>
+              <button class="btn primary small" id="btn-tl-play">Play Timeline</button>
+              <button class="btn small warn" id="btn-tl-stop">Stop</button>
+            </div>
+            <div class="form-row">
+              <input type="text" id="tl-name" placeholder="Timeline name" value="Holiday Sequence" />
+              <button class="btn small" id="btn-tl-save">Save Timeline</button>
+            </div>
+            <div id="timelines-list" class="saved-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DEVELOPER CONSOLE -->
+    <section id="tab-developer" class="tab-panel">
+      <div class="dev-warning">
+        <strong>Developer Protocol Console (Isolated Engineering Tools):</strong>
+        Raw hex frames bypass high-level safety bounds. Non-read-only commands require explicit write confirmation.
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <h2>Raw Inner Command Injector</h2>
+            <div class="btn-group">
+              <button class="btn small" data-preset-hex="81 8A 8B">State Query</button>
+              <button class="btn small" data-preset-hex="11 1A 1B 0F">RTC Query</button>
+              <button class="btn small" data-preset-hex="2B 2C 2D">Remote Query</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <input type="text" id="dev-raw-hex" value="81 8A 8B" class="mono" style="flex:1" placeholder="Hex inner payload e.g. 81 8A 8B" />
+            <label class="chk"><input type="checkbox" id="dev-expect-resp" checked /> Expect RX</label>
+          </div>
+          <div class="form-row">
+            <label class="chk warn-text">
+              <input type="checkbox" id="dev-confirm-write" />
+              Confirm raw write to controller hardware (required for non-query commands)
+            </label>
+            <button class="btn primary" id="btn-dev-send">Send Command</button>
+          </div>
+          <div class="subpanel">
+            <div class="label">Wire Tunnel Preview (`B0 B1 B2 B3` + length + checksum)</div>
+            <pre id="dev-wire-preview" class="mini-pre"></pre>
+            <div class="label">Last Response</div>
+            <pre id="dev-raw-resp" class="mini-pre">—</pre>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Diagnostic Capture &amp; Export</h2>
+            <div class="btn-group">
+              <label class="chk"><input type="checkbox" id="dev-autopoll" checked /> Live Log</label>
+              <button class="btn small" id="btn-dev-refresh">Refresh Log</button>
+              <button class="btn small" id="btn-dev-clear">Clear</button>
+              <a class="btn small primary" href="/api/dev/export" download="wreath-diagnostics.json">Export JSON</a>
+            </div>
+          </div>
+          <pre id="dev-capabilities-json" class="mini-pre" style="max-height:220px;overflow:auto"></pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h2>TX / RX Hexadecimal Packet Log</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="pkt-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Dir</th>
+                <th>Transport</th>
+                <th>Seq</th>
+                <th>Opcode</th>
+                <th>Summary</th>
+                <th>RTT</th>
+                <th>Inner / Wire Hex</th>
+              </tr>
+            </thead>
+            <tbody id="dev-packets-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

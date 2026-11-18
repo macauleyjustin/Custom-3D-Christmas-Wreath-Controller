@@ -1,106 +1,79 @@
-```markdown
-# Holiday Bright Lights "Brilliant" Wreath – Reverse Engineering Documentation
+# Custom 3D Christmas Wreath Controller (`AK001-ZJ21413` / Bouffalo Lab BL602)
 
-Successfully reverse-engineered the proprietary control protocol for the **Holiday Bright Lights Brilliant Series Wreath** (Model: AK001-ZJ21413).
+> **Project Purpose & Scope:**  
+> This application is the **completed end-state controller software** for a **custom-wrapped, custom-built 50-LED smart Christmas wreath** powered by a **Holiday Bright Lights "Brilliant" Series (`AK001-ZJ21413`)** controller (Bouffalo Lab `BL602` RISC-V SoC, Zengge/Surplife firmware `6B_30_20240524_ZG-BL-SBL-02`).  
+> It supersedes the initial 2025 proof-of-concept scripts (preserved at git tag `original-baseline`) with a complete protocol stack, 3D physical wreath topology model, physics-driven lighting engine, Web Lighting Console, hardware simulator, and automated test suite.
 
-This device pretends to be a generic "Magic Home" / "Flux LED" Wi-Fi controller but actually runs a locked, encrypted "tunnel" protocol branded as **Surplife Pro** inside the official app. Standard open-source libraries (flux_led, tinytuya, etc.) are deliberately rejected.
+---
 
-**Reverse Engineered by a determined human + Grok/Gemini – November 2025**
+## Why This Exists (Custom-Wrapped 3D Wreath Mapping)
 
-## 1. Hardware Profile
+When a 50-LED addressable strand is hand-wrapped around a 3D pine wreath rather than laid out in a flat circle, sequential pixel indices (`0..49`) jump across **depth layers** and loop back and forth through branches:
 
-| Attribute          | Value                                      |
-|---------------------|--------------------------------------------|
-| SoC                 | Bouffalo Lab RISC-V (most likely BL602/BL604) |
-| Wi-Fi Module        | High-Flying HF-LPT100 series (or similar) |
-| Discovery Name      | `HF-A11ASSISTHREAD`                       |
-| Discovery Protocol  | UDP 48899                                  |
-| Control Port        | TCP 5577                                   |
+- **`inner` ring (`r ≈ 0.56`):** Inner perimeter halo facing the center opening
+- **`front` / `outer` crown (`r ≈ 0.78–1.00`):** Foreground and outer-edge hero bulbs
+- **`back` buried layer (`r ≈ 0.82`, recessed):** Bulbs tucked inside/behind pine needles, ideal for glowing ambient foliage backlight rather than sharp foreground patterns
 
-## 2. Protocol Discovery Process
+This project models **44 physically mapped LEDs (`2, 7–49`)** (with `0, 1, 3–6` smoothly interpolated) into true `(clock_hour, angle_deg, radius, x, y, depth_layer)` coordinates inside [controller/pixels/wreath_layout.py](controller/pixels/wreath_layout.py). Every 3D effect—from the swaying **3D Pillar Candle** and **Thermal Convection Fire** to the **3D Wandering Firefly**, **Tesla Jacob's Ladder**, **Quantum Wave Interference**, **Relativistic Black Hole**, and **3D Living Heartbeat**—renders directly in physical 3D wreath space.
 
-Standard tools failed → time to go full packet-sniper mode:
+*(If you build another custom-wrapped wreath, update `_OBSERVED_NODES` in [controller/pixels/wreath_layout.py](controller/pixels/wreath_layout.py) using the Pixel Editor's single-LED click tool.)*
 
-- Port scan confirmed only TCP 5577 open
-- PCAPdroid / Wireshark captures of the official "Surplife Pro" app
-- Every packet from the app starts with the magic bytes `B0 B1 B2 B3 …`
-- Hypothesis: the chip completely ignores raw LED commands unless they are wrapped in this proprietary 16-byte "tunnel" header
+---
 
-## 3. The "Tunnel" Protocol (Surplife Pro Encryption Layer)
+## Key Capabilities & Technical Specs
 
-All real commands must be encapsulated in the following wrapper:
+| Subsystem | Confirmed Capability |
+|---|---|
+| **SoC & Firmware** | Bouffalo Lab **BL602** (`32-bit RISC-V`, Wi-Fi 4 + BLE 5.0, MAC OUI `B4:E8:42`), model `0x006B` (`AK001-ZJ21413`), firmware `6B_30_20240524_ZG-BL-SBL-02` |
+| **Addressable Pixels** | **50 individual HSV pixels** (`0x0032` in `EA 81` state) via `0xE1 0x23` (`7 bytes/pixel`: `anim, H/2, S, V, 00, 00, px_speed`) |
+| **Wi-Fi Control (`TCP 5577` + `UDP 48899`)** | Auto-discovery (`HF-A11ASSISTHREAD`), read-only AT info (`AT+LVER`, `AT+SOCKB`, `AT+WMODE`), `B0 B1 B2 B3` tunnel framing, sustained `E1 23` streaming up to `18.7 fps` (`12 FPS` default, `18 FPS` hard cap) |
+| **BLE Control (`IOTWFC00`, GATT `0xFFFF`)** | Zengge BLE v0 framing over `FF01`/`FF02` with JSON payload decoding (`EA 81`, `0F 11`, `E1 22` compact color); `E1 23` streaming guarded due to `244 B` `withoutResponse` MTU |
+| **Color & Zones** | `0xE1 0x22` 20-group compact color + white brightness (`WB`), plus legacy `0xE0 0x01 0x00 0xC1` global HSV+W |
+| **Hardware-Native Scenes** | `0xE1 0x21` built-in scenes (`mode=0x25`) & `0xE1 0x26` dynamic frame overlays (`mode=0x66`) |
+| **Lighting Engine** | **38 host per-pixel effects** (`3D Physics`, `3D Nature`, `3D Experimental`, `3D Wreath`, `Spectrum`, `Holiday`, `Weather`) + user-authored Keyframe Timelines (`cut`/`linear` interpolation) |
+| **Web Lighting Console** | Pure-stdlib local web app (`http://127.0.0.1:8765`) featuring Device Diagnostics, **3D Physical Wreath Pixel Editor**, Keyframe Animation Editor, Telegraphy, Weather Sync, and Developer Hex Console |
+| **Simulator & Tests** | Fault-injectable `SimulatedWreathDevice` + `19` automated unit/simulator/API/hardware tests |
 
-| Bytes | Field              | Value / Description                                      |
-|-------|--------------------|----------------------------------------------------------|
-| 0-3   | Preamble           | Fixed: `B0 B1 B2 B3`                                     |
-| 4-7   | Transport ID       | `00 01 02 XX` – XX is an incrementing sequence number   |
-| 8-9   | Payload Length     | Big-endian length of (Payload + 1-byte inner checksum)   |
-| 10-n  | Payload            | Actual inner command (e.g., `E0 01 …`)                   |
-| n+1   | Outer Checksum     | `(sum(all bytes from preamble to end of payload) + 198) & 0xFF` |
+---
 
-### The Magic Checksum Math
+## Quick Start (Zero Mandatory External Dependencies)
 
-Standard MagicHome: `checksum = sum(bytes) % 256`  
-This device: `checksum = (sum(bytes) + 198) % 256` → equivalent to `-58 mod 256`
-
-Discovered by taking a real packet where sum-of-bytes = 730 → transmitted checksum byte = 0xA0  
-→ 730 + X ≡ 160 mod 256 → X = 198 (or equivalently subtract 58).
-
-## 4. Inner Command Set (once inside the tunnel)
-
-After decryption, the device speaks a **native HSV** protocol, not RGB.
-
-### 4.1 Set Global Color (0xE0)
-
-```
-E0 01 00 C1 [H] [S] [V] 00 00 00 00 0A 00 00
-```
-
-| Byte | Meaning              | Range    | Notes                                      |
-|------|----------------------|----------|--------------------------------------------|
-| H    | Hue                  | 0–180    | Maps to 0–360° (multiply by 2)             |
-|      | 0x00                 | Red      |                                            |
-|      | 0x3C                 | Green    |                                            |
-|      | 0x78                 | Blue     |                                            |
-| S    | Saturation           | 0–100    | 0 = white                                  |
-| V    | Value / Brightness   | 0–100    | 0 = off                                    |
-
-### 4.2 Individual Pixel Control (0xE1 0x26)
-
-Allows bitmasked addressing of specific LEDs (wreath has ~80–100 pixels depending on size).
-
-Format is more complex and only partially reverse-engineered so far – global color (0xE0) is sufficient for most effects.
-
-## 5. Practical Result – Python Driver
-
-A fully working driver is available here: [`wreath_weather.py`](wreath_weather.py)
-
-Features:
-- Automatic reconnection (Bouffalo chips aggressively sleep)
-- Correct tunnel encapsulation + +198 checksum
-- HSV → wreath color conversion
-- Integration with Open-Meteo API → wreath displays current weather:
-  - Blue/cyan = cold
-  - Red/orange = hot
-  - Purple = precipitation
-  - White flashing = snow / storms
-
-### Usage
+Requires **Python 3.10+** standard library only:
 
 ```bash
-pip install requests
-python3 wreath_weather.py <wreath_ip> [latitude] [longitude]
+# 1. Launch the Web Lighting Console (auto-discovers wreath via UDP 48899, or uses simulator)
+python3 -m controller web --open-browser
+
+# 2. Or connect directly to a known wreath IP
+python3 -m controller web --ip 10.0.0.207 --open-browser
+
+# 3. Run the 3D physics & experimental showcase (cycles 12 custom 3D effects)
+python3 examples/physics_3d_showcase.py --ip 10.0.0.207
+
+# 4. Run the Fireplace -> Color Swirl -> Cosmic Aurora choreographed show
+python3 examples/fireplace_swirl_show.py --ip 10.0.0.207
+
+# 5. Run the automated test suite (unit, simulator, Web API, and live hardware if reachable)
+python3 -m unittest discover -s controller/tests -v
 ```
 
-Your Christmas wreath is now officially the world’s most over-engineered weather station.
+---
 
-## Acknowledgments
+## How It Works (Reverse Engineering Summary)
 
-- The anonymous reverse-engineer who spent three evenings staring at hex dumps
-- Grok & Gemini for helping solve the checksum offset in < 5 minutes
-- Bouffalo Lab for making a perfectly good open-source RISC-V chip… then locking everything down for Christmas lights
+1. **Tunnel Checksum Breakthrough:** Early reverse engineering observed a `+198` (`-58 mod 256`) checksum offset. In reality, `0xB0 + 0xB1 + 0xB2 + 0xB3 = 710 ≡ 198 (mod 256)`, so the outer checksum is simply `sum(all_preceding_bytes) & 0xFF`.
+2. **Per-Pixel Protocol Discovery:** `0xE1 0x26` sets frame animation overlays (`pat = OO + 1` in `EA 81`), while **`0xE1 0x23`** sends full 50-pixel HSV frames (`359 B` inner payload).
+3. **BLE Dual-Transport Discovery:** Contrary to the initial assumption that BLE was provisioning-only, `IOTWFC00` accepts Zengge BLE v0 packets on `0xFFFF`/`FF01` and returns JSON-wrapped hex state payloads on `FF02`.
+4. **3D Physical Wreath Calibration:** Stepping through individual LEDs in the Pixel Editor mapped the exact clock positions (`12:00` top, `3:00` right, `6:00` bottom, `9:00` left) and depth layers (`inner`, `front`, `outer`, `back`) of the custom-wrapped wreath.
 
-Merry hacking and happy holidays! 🎄
-```
+---
 
-Copy-paste this into a `README.md` on GitHub and it will render beautifully. Add the Python script in the same repo and you're good to go. 🚀
+## Complete Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Directory inventory, call chains, module responsibilities, and legacy bug fixes
+- [HARDWARE.md](HARDWARE.md) — BL602 SoC specs, firmware identity, and custom-wrapped 3D 50-LED physical topology
+- [PROTOCOL.md](PROTOCOL.md) — Verified UDP/TCP/BLE framing, `EA 81` state layout, and command specifications
+- [REVERSE_ENGINEERING.md](REVERSE_ENGINEERING.md) — Controlled experiments, packet diffs, streaming benchmarks, and resolved misconceptions
+- [FEATURE_MATRIX.md](FEATURE_MATRIX.md) — Verification matrix across unit, simulator, and live hardware tests
+- [USER_GUIDE.md](USER_GUIDE.md) — Everyday Web Console, Pixel Editor, Timeline Editor, and CLI instructions
+- [DEVELOPER_API.md](DEVELOPER_API.md) — Reusable `controller` Python API reference
